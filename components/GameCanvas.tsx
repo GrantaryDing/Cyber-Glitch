@@ -72,6 +72,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
     color: '#ffffff'
   });
 
+  const cameraRef = useRef<{ x: number, y: number }>({ x: 0, y: 0 });
   const respawnPointRef = useRef<{x: number, y: number}>({ x: 0, y: 0 });
   const activatedCheckpointsRef = useRef<Set<string>>(new Set());
 
@@ -134,6 +135,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
         activatedCheckpointsRef.current.clear();
         respawnPointRef.current = { ...originalLevel.startPos };
         setCurrentZone("ZONE_START");
+        cameraRef.current = { x: 0, y: 0 };
         
         // Activate default checkpoints
         if (originalLevel.checkpoints) {
@@ -177,6 +179,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
       dead: false,
       color: '#ffffff'
     };
+
+    // Reset camera to player if partial reset
+    if (!fullReset) {
+        // Immediate snap
+        cameraRef.current.x = Math.max(0, startX - CANVAS_WIDTH * 0.3);
+    }
 
     frameCountRef.current = 0;
     particlesRef.current = [];
@@ -275,6 +283,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
     const player = playerRef.current;
     const level = levelDataRef.current;
     frameCountRef.current++;
+
+    // --- CAMERA LOGIC ---
+    // Target X: Player position minus some offset (e.g. 30% of screen)
+    const targetCamX = player.x - CANVAS_WIDTH * 0.35;
+    // Smooth Lerp
+    const lerpSpeed = 0.1;
+    let nextCamX = cameraRef.current.x + (targetCamX - cameraRef.current.x) * lerpSpeed;
+    // Clamp Left (Assuming levels start at 0)
+    nextCamX = Math.max(0, nextCamX);
+    cameraRef.current.x = nextCamX;
+    // --------------------
 
     // Trail
     if (frameCountRef.current % 3 === 0 && (Math.abs(player.vx) > 1 || Math.abs(player.vy) > 1)) {
@@ -424,54 +443,60 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Shake transform
+    const camX = cameraRef.current.x;
+    
+    // Shake transform (applies to world)
     const dx = (Math.random() - 0.5) * shakeRef.current;
     const dy = (Math.random() - 0.5) * shakeRef.current;
     
-    ctx.save();
-    ctx.translate(dx, dy);
-
-    // Clear with semi-transparent black for trails (optional) or solid
+    // 1. Clear Screen (Screen Space)
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#050505';
-    ctx.fillRect(-dx, -dy, CANVAS_WIDTH, CANVAS_HEIGHT); 
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); 
 
-    // Draw Rain
+    // 2. Background Rain (Screen Space - Overlay feel)
     ctx.font = '14px "VT323", monospace';
     rainRef.current.forEach(r => {
         ctx.fillStyle = r.color;
-        if (Math.random() > 0.95) ctx.fillStyle = '#fff'; // Occasional bright glitch
+        if (Math.random() > 0.95) ctx.fillStyle = '#fff'; 
         ctx.fillText(r.chars, r.x, r.y);
     });
+    
+    // 3. World Rendering
+    ctx.save();
+    // Translate everything by camera position
+    ctx.translate(-camX + dx, dy);
 
-    // Glitch background rects
-    if (glitchRef.current > 0) {
-       ctx.fillStyle = `rgba(${Math.random()*255}, 0, ${Math.random()*255}, 0.1)`;
-       ctx.fillRect(0, Math.random()*CANVAS_HEIGHT, CANVAS_WIDTH, Math.random()*50);
-    }
-
-    // Grid (Fainter)
+    // Grid (World Space - Infinite effect)
     ctx.strokeStyle = '#111';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for(let x=0; x<CANVAS_WIDTH; x+=40) { ctx.moveTo(x,0); ctx.lineTo(x, CANVAS_HEIGHT); }
-    for(let y=0; y<CANVAS_HEIGHT; y+=40) { ctx.moveTo(0,y); ctx.lineTo(CANVAS_WIDTH, y); }
+    // Optimize grid drawing to only visible area
+    const startGridX = Math.floor(camX / 40) * 40;
+    const endGridX = startGridX + CANVAS_WIDTH + 40;
+    for(let x=startGridX; x<endGridX; x+=40) { ctx.moveTo(x,0); ctx.lineTo(x, CANVAS_HEIGHT); }
+    for(let y=0; y<CANVAS_HEIGHT; y+=40) { ctx.moveTo(camX,y); ctx.lineTo(camX + CANVAS_WIDTH, y); }
     ctx.stroke();
 
     const level = levelDataRef.current;
 
+    // Glitch background rects (World Space)
+    if (glitchRef.current > 0) {
+       ctx.fillStyle = `rgba(${Math.random()*255}, 0, ${Math.random()*255}, 0.1)`;
+       ctx.fillRect(camX, Math.random()*CANVAS_HEIGHT, CANVAS_WIDTH, Math.random()*50);
+    }
+
     // Draw Checkpoints
     if (level.checkpoints) {
         level.checkpoints.forEach(cp => {
-            if (cp.id === 'start_cp') return; // Don't render the start point as a visual terminal
+            if (cp.id === 'start_cp') return; 
 
-            ctx.fillStyle = cp.activated ? C_CHECKPOINT : 'rgba(57, 255, 20, 0.2)'; // Bright green if active, dim if not
+            ctx.fillStyle = cp.activated ? C_CHECKPOINT : 'rgba(57, 255, 20, 0.2)';
             ctx.shadowBlur = cp.activated ? 20 : 0;
             ctx.shadowColor = C_CHECKPOINT;
             
-            // Draw Checkpoint "Terminal"
             ctx.fillRect(cp.x, cp.y, cp.w, cp.h);
             
-            // Text overhead
             if (cp.activated) {
                  ctx.fillStyle = '#fff';
                  ctx.font = '12px "VT323"';
@@ -486,6 +511,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
       if (!plat.visible && !plat.id.includes('invis') && !plat.id.includes('ceil')) return;
       if (!plat.visible) return;
 
+      // Optimization: Don't draw if off screen
+      if (plat.x + plat.w < camX || plat.x > camX + CANVAS_WIDTH) return;
+
       ctx.shadowBlur = 10;
       ctx.shadowColor = plat.color;
       ctx.fillStyle = plat.color;
@@ -495,7 +523,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
       ctx.strokeRect(plat.x, plat.y, plat.w, plat.h);
       ctx.shadowBlur = 0;
       
-      // Cyber texture (lines)
+      // Cyber texture
       ctx.strokeStyle = 'rgba(0,0,0,0.3)';
       ctx.beginPath();
       for(let i=0; i<plat.w; i+=10) {
@@ -508,13 +536,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
     // Hazards
     level.hazards.forEach(haz => {
       if (!haz.visible) return; 
+      if (haz.x + haz.w < camX || haz.x > camX + CANVAS_WIDTH) return;
 
       ctx.shadowBlur = 15;
       ctx.shadowColor = haz.color;
       ctx.fillStyle = haz.color;
       
       if (haz.id.includes('laser')) {
-         // Draw Laser
          ctx.fillRect(haz.x, haz.y, haz.w, haz.h);
          ctx.fillStyle = '#fff';
          ctx.fillRect(haz.x + 2, haz.y, haz.w - 4, haz.h);
@@ -538,7 +566,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
     ctx.shadowColor = '#fcee0a';
     ctx.fillStyle = '#fcee0a';
     ctx.fillRect(level.goal.x, level.goal.y, level.goal.w, level.goal.h);
-    // Portal swirl
+    
     ctx.fillStyle = '#000';
     ctx.fillRect(level.goal.x + 5, level.goal.y + 5, level.goal.w - 10, level.goal.h - 10);
     ctx.fillStyle = '#fff';
@@ -546,7 +574,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
     const swirlX = level.goal.x + level.goal.w/2 + Math.cos(t*0.1) * 5;
     const swirlY = level.goal.y + level.goal.h/2 + Math.sin(t*0.1) * 10;
     ctx.fillRect(swirlX, swirlY, 4, 4);
-
     ctx.shadowBlur = 0;
 
     // Trail
@@ -588,6 +615,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
     });
     ctx.globalAlpha = 1.0;
 
+    // Restore context for next frame
     ctx.restore();
   };
 

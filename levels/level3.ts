@@ -1,3 +1,4 @@
+
 import { LevelData, EntityType } from '../types';
 import { C_PLATFORM, C_HAZARD, C_INVISIBLE } from '../theme';
 import { CANVAS_HEIGHT } from '../constants';
@@ -15,7 +16,6 @@ export const level3: LevelData = {
     { id: 'start', type: EntityType.PLATFORM, x: 0, y: 250, w: 150, h: 200, color: C_PLATFORM, visible: true },
     { id: 'middle', type: EntityType.PLATFORM, x: 200, y: 350, w: 350, h: 20, color: C_PLATFORM, visible: true },
     { id: 'end', type: EntityType.PLATFORM, x: 650, y: 410, w: 150, h: 40, color: C_PLATFORM, visible: true },
-    { id: 'ceil', type: EntityType.PLATFORM, x: 200, y: 250, w: 350, h: 20, color: C_PLATFORM, visible: false },
   ],
   hazards: [
     { id: 'rain1', type: EntityType.HAZARD, x: 250, y: -50, w: 20, h: 40, color: C_HAZARD, visible: true },

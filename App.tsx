@@ -36,6 +36,12 @@ const App: React.FC = () => {
     setGameState('MENU');
   };
 
+  const handleUnlockAllLevels = () => {
+    // Add all level IDs to completed list
+    const allIds = LEVELS.map(l => l.id);
+    setCompletedLevels(allIds);
+  };
+
   const currentLevelName = LEVELS.find(l => l.id === currentLevelId)?.name || "UNKNOWN_SECTOR";
 
   return (
@@ -53,6 +59,7 @@ const App: React.FC = () => {
             onStartLevel={handleStartLevel} 
             completedLevels={completedLevels}
             initialView={menuInitialView}
+            onUnlockAllLevels={handleUnlockAllLevels}
           />
         )}
 

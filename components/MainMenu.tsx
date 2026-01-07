@@ -1,17 +1,24 @@
 
-import React, { useState, useEffect } from 'react';
-import { Play, Trophy, Cpu, Maximize, Minimize } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Trophy, Cpu, Maximize, Minimize, Terminal, X } from 'lucide-react';
 import { LEVELS } from '../levels/index';
 
 interface MainMenuProps {
   onStartLevel: (id: number) => void;
   completedLevels: number[];
   initialView?: 'MAIN' | 'SELECT';
+  onUnlockAllLevels: () => void;
 }
 
-const MainMenu: React.FC<MainMenuProps> = ({ onStartLevel, completedLevels, initialView = 'MAIN' }) => {
+const MainMenu: React.FC<MainMenuProps> = ({ onStartLevel, completedLevels, initialView = 'MAIN', onUnlockAllLevels }) => {
   const [view, setView] = useState<'MAIN' | 'SELECT'>(initialView);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Dev Terminal State
+  const [showDevTerminal, setShowDevTerminal] = useState(false);
+  const [devCode, setDevCode] = useState('');
+  const [terminalStatus, setTerminalStatus] = useState<'IDLE' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -19,12 +26,93 @@ const MainMenu: React.FC<MainMenuProps> = ({ onStartLevel, completedLevels, init
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
 
+  // Focus input when terminal opens
+  useEffect(() => {
+    if (showDevTerminal && inputRef.current) {
+        inputRef.current.focus();
+    }
+  }, [showDevTerminal]);
+
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(e => console.error(e));
     } else {
       if (document.exitFullscreen) document.exitFullscreen();
     }
+  };
+
+  const handleDevAccess = () => {
+    setShowDevTerminal(true);
+    setTerminalStatus('IDLE');
+    setDevCode('');
+  };
+
+  const handleTerminalSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (devCode.trim() === '090911') {
+        setTerminalStatus('SUCCESS');
+        onUnlockAllLevels();
+        setTimeout(() => {
+            setShowDevTerminal(false);
+        }, 1500);
+    } else {
+        setTerminalStatus('ERROR');
+        setDevCode('');
+        setTimeout(() => setTerminalStatus('IDLE'), 2000);
+    }
+  };
+
+  // Render Dev Terminal Modal
+  const renderDevTerminal = () => {
+    if (!showDevTerminal) return null;
+    
+    return (
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md border-2 border-[#00f3ff] bg-black p-6 shadow-[0_0_50px_rgba(0,243,255,0.2)] font-mono relative animate-in zoom-in-95 duration-200">
+            {/* Close Button */}
+            <button 
+               onClick={() => setShowDevTerminal(false)}
+               className="absolute top-2 right-2 text-[#00f3ff] hover:text-white transition-colors"
+            >
+               <X size={20} />
+            </button>
+    
+            <div className="flex items-center gap-2 mb-6 text-[#00f3ff] border-b border-[#00f3ff] pb-2">
+                <Terminal size={20} />
+                <h3 className="text-xl font-bold tracking-widest">SYSTEM OVERRIDE</h3>
+            </div>
+    
+            <form onSubmit={handleTerminalSubmit}>
+                <div className="mb-4 h-16 flex flex-col justify-center">
+                    {terminalStatus === 'IDLE' && <p className="text-gray-400 text-sm">ENTER SECURITY CREDENTIALS:</p>}
+                    {terminalStatus === 'ERROR' && <p className="text-[#ff003c] font-bold animate-pulse">ERROR: ACCESS DENIED</p>}
+                    {terminalStatus === 'SUCCESS' && <p className="text-[#39ff14] font-bold animate-pulse">SUCCESS: PRIVILEGES ESCALATED</p>}
+                </div>
+                
+                <div className="flex items-center gap-2 bg-[#0a0a0a] p-3 border border-[#333] focus-within:border-[#00f3ff] transition-colors">
+                    <span className="text-[#00f3ff] font-bold">{'>'}</span>
+                    <input 
+                        ref={inputRef}
+                        type="text" 
+                        value={devCode}
+                        onChange={(e) => setDevCode(e.target.value)}
+                        className="bg-transparent border-none outline-none text-[#00f3ff] w-full font-mono uppercase tracking-wider placeholder-gray-800"
+                        autoFocus
+                        maxLength={10}
+                        placeholder="______"
+                        disabled={terminalStatus === 'SUCCESS'}
+                    />
+                    <span className="w-2 h-4 bg-[#00f3ff] animate-pulse"></span>
+                </div>
+
+                <div className="mt-4 text-[10px] text-gray-600 flex justify-between">
+                    <span>SECURE CONNECTION</span>
+                    <span>V.2.0.4</span>
+                </div>
+            </form>
+        </div>
+      </div>
+    );
   };
 
   if (view === 'MAIN') {
@@ -68,11 +156,23 @@ const MainMenu: React.FC<MainMenuProps> = ({ onStartLevel, completedLevels, init
 
   return (
     <div className="flex flex-col items-center justify-center h-full w-full p-8 z-10 relative">
+       {renderDevTerminal()}
+
        <button 
           onClick={() => setView('MAIN')} 
           className="absolute top-8 left-8 text-[#00f3ff] hover:text-white uppercase tracking-widest"
         >
           &lt; Back
+      </button>
+
+      {/* Developer Button Positioned Next to Fullscreen */}
+      <button 
+          onClick={handleDevAccess}
+          className="absolute top-9 right-24 text-[#00f3ff] hover:text-white opacity-50 hover:opacity-100 transition-all text-xs font-mono border border-[#00f3ff] px-3 py-1 flex items-center gap-2 hover:bg-[#00f3ff]/10"
+          title="Developer Override"
+      >
+          <Terminal size={12} />
+          <span>DEV_ACCESS</span>
       </button>
 
       <button 
