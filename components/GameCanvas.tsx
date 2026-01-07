@@ -10,9 +10,9 @@ import {
   MAX_FALL_SPEED
 } from '../constants';
 import { LEVELS } from '../levels/index';
-import { LevelData, Rect } from '../types';
+import { LevelData, Rect, GameObject } from '../types';
 import { RefreshCw, Play, Maximize, Minimize, Pause } from 'lucide-react';
-import { C_CHECKPOINT } from '../theme';
+import { C_CHECKPOINT, C_GOLD } from '../theme';
 
 interface GameCanvasProps {
   levelId: number;
@@ -75,6 +75,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
   const cameraRef = useRef<{ x: number, y: number }>({ x: 0, y: 0 });
   const respawnPointRef = useRef<{x: number, y: number}>({ x: 0, y: 0 });
   const activatedCheckpointsRef = useRef<Set<string>>(new Set());
+  const grappleTargetRef = useRef<GameObject | null>(null);
 
   const particlesRef = useRef<Particle[]>([]);
   const trailRef = useRef<Trail[]>([]);
@@ -180,6 +181,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
       color: '#ffffff'
     };
 
+    grappleTargetRef.current = null;
+
     // Reset camera to player if partial reset
     if (!fullReset) {
         // Immediate snap
@@ -202,7 +205,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       keysRef.current[e.code] = true;
-      if (e.code === 'KeyR') {
+      if (e.code === 'KeyT') { // Changed from R to T
         setDeathCount(d => d + 1);
         spawnParticles(playerRef.current.x, playerRef.current.y, '#fff', 20);
         resetLevel(false);
@@ -284,6 +287,51 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
     const level = levelDataRef.current;
     frameCountRef.current++;
 
+    // --- GRAPPLE LOGIC ---
+    if (keysRef.current['KeyR']) {
+       if (!grappleTargetRef.current) {
+           // Search for gold blocks
+           const goldBlocks = level.platforms.filter(p => p.id.includes('gold'));
+           let closestDist = 400; // Max range
+           let target = null;
+
+           for (const b of goldBlocks) {
+               const dx = (b.x + b.w/2) - (player.x + player.w/2);
+               const dy = (b.y + b.h/2) - (player.y + player.h/2);
+               const dist = Math.sqrt(dx*dx + dy*dy);
+               if (dist < closestDist) {
+                   closestDist = dist;
+                   target = b;
+               }
+           }
+           if (target) {
+               grappleTargetRef.current = target;
+               spawnParticles(target.x + target.w/2, target.y + target.h/2, C_GOLD, 10);
+           }
+       }
+
+       if (grappleTargetRef.current) {
+           const t = grappleTargetRef.current;
+           const tx = t.x + t.w/2;
+           const ty = t.y + t.h/2;
+           const px = player.x + player.w/2;
+           const py = player.y + player.h/2;
+
+           const dx = tx - px;
+           const dy = ty - py;
+           
+           // Pull force
+           player.vx += dx * 0.05;
+           player.vy += dy * 0.05;
+           
+           // Dampening
+           player.vx *= 0.9;
+           player.vy *= 0.9;
+       }
+    } else {
+        grappleTargetRef.current = null;
+    }
+
     // --- CAMERA LOGIC ---
     // Target X: Player position minus some offset (e.g. 30% of screen)
     const targetCamX = player.x - CANVAS_WIDTH * 0.35;
@@ -336,8 +384,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
         }
     }
 
-    // 3. Gravity
-    player.vy += GRAVITY;
+    // 3. Gravity (Only if not grappling)
+    if (!grappleTargetRef.current) {
+        player.vy += GRAVITY;
+    }
     if (player.vy > MAX_FALL_SPEED) player.vy = MAX_FALL_SPEED;
 
     // 4. Horizontal
@@ -486,6 +536,22 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
        ctx.fillRect(camX, Math.random()*CANVAS_HEIGHT, CANVAS_WIDTH, Math.random()*50);
     }
 
+    // Grapple Line (Behind objects)
+    if (grappleTargetRef.current) {
+        const t = grappleTargetRef.current;
+        const p = playerRef.current;
+        
+        ctx.strokeStyle = C_GOLD;
+        ctx.lineWidth = 3;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = C_GOLD;
+        ctx.beginPath();
+        ctx.moveTo(p.x + p.w/2, p.y + p.h/2);
+        ctx.lineTo(t.x + t.w/2, t.y + t.h/2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+    }
+
     // Draw Checkpoints
     if (level.checkpoints) {
         level.checkpoints.forEach(cp => {
@@ -523,14 +589,21 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
       ctx.strokeRect(plat.x, plat.y, plat.w, plat.h);
       ctx.shadowBlur = 0;
       
-      // Cyber texture
-      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-      ctx.beginPath();
-      for(let i=0; i<plat.w; i+=10) {
-          ctx.moveTo(plat.x + i, plat.y);
-          ctx.lineTo(plat.x + i + 5, plat.y + plat.h);
+      // Cyber texture (different for gold blocks)
+      if (plat.id.includes('gold')) {
+          ctx.fillStyle = '#FFFACD';
+          ctx.globalAlpha = 0.5;
+          ctx.fillRect(plat.x + 4, plat.y + 4, plat.w - 8, plat.h - 8);
+          ctx.globalAlpha = 1.0;
+      } else {
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath();
+        for(let i=0; i<plat.w; i+=10) {
+            ctx.moveTo(plat.x + i, plat.y);
+            ctx.lineTo(plat.x + i + 5, plat.y + plat.h);
+        }
+        ctx.stroke();
       }
-      ctx.stroke();
     });
 
     // Hazards
@@ -694,8 +767,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ levelId, onLevelComplete, onBac
       <div className="mt-4 flex gap-8 text-gray-500 text-sm font-mono absolute bottom-4 opacity-50 hover:opacity-100 transition-opacity">
         <span>MOVE: WASD / ARROWS</span>
         <span>JUMP: SPACE</span>
-        <span>RETRY: R</span>
-        <span>FULLSCREEN: F11 / BTN</span>
+        <span>GRAPPLE: R</span>
+        <span>RETRY: T</span>
       </div>
     </div>
   );

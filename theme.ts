@@ -7,4 +7,4 @@ export const C_INVISIBLE = 'rgba(0,0,0,0)';
 export const C_LASER = '#ff00ff';    // Magenta
 export const C_TEXT_BG = '#0f1f1f'; // Dark Greenish Black
 export const C_CHECKPOINT = '#39ff14'; // Neon Green
-    
+export const C_GOLD = '#FFD700';     // Gold
